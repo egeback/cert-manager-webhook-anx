@@ -5,8 +5,6 @@ import (
 	"testing"
 
 	"github.com/jetstack/cert-manager/test/acme/dns"
-
-	"github.com/cert-manager/webhook-example/example"
 )
 
 var (
@@ -29,8 +27,8 @@ func TestRunsSuite(t *testing.T) {
 	fixture := dns.NewFixture(&anxDNSProviderSolver{},
 		dns.SetResolvedZone(zone),
 		dns.SetAllowAmbientCredentials(false),
-		dns.SetManifestPath("testdata/anxdnx-webhook"),
-		dns.SetBinariesPath("_out/kubebuilder/bin"),
+		dns.SetManifestPath("testdata/anxresolver/anxdns-credentials"),
+		//dns.SetBinariesPath("_out/kubebuilder/bin"),
 	)
 	//need to uncomment and  RunConformance delete runBasic and runExtended once https://github.com/cert-manager/cert-manager/pull/4835 is merged
 	//fixture.RunConformance(t)

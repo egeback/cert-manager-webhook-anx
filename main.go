@@ -1,16 +1,28 @@
 package main
 
 import (
+	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
+	"io/ioutil"
+	"net/http"
 	"os"
-
-	extapi "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
-	//"k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/rest"
+	"strings"
 
 	"github.com/jetstack/cert-manager/pkg/acme/webhook/apis/acme/v1alpha1"
+	acme "github.com/jetstack/cert-manager/pkg/acme/webhook/apis/acme/v1alpha1"
+	corev1 "k8s.io/api/core/v1"
+	extapi "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
+	metaV1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
+	"k8s.io/klog/v2"
+	//"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/rest"
+
 	"github.com/jetstack/cert-manager/pkg/acme/webhook/cmd"
+	"github.com/jetstack/cert-manager/pkg/issuer/acme/dns/util"
 )
 
 var GroupName = os.Getenv("GROUP_NAME")
@@ -41,7 +53,7 @@ type anxDNSProviderSolver struct {
 	// 3. uncomment the relevant code in the Initialize method below
 	// 4. ensure your webhook's service account has the required RBAC role
 	//    assigned to it for interacting with the Kubernetes APIs you need.
-	//client kubernetes.Clientset
+	client *kubernetes.Clientset
 }
 
 // anxDNSProviderConfig is a structure that is used to decode into when
@@ -59,8 +71,8 @@ type anxDNSProviderSolver struct {
 // be used by your provider here, you should reference a Kubernetes Secret
 // resource and fetch these credentials using a Kubernetes clientset.
 type anxDNSProviderConfig struct {
-	BaseURL           string                   `json:"baseURL"`
-	APIKeySecretRef   corev1.SecretKeySelector `json:"APIKeySecretRef"`
+	BaseURL         string                   `json:"baseURL"`
+	APIKeySecretRef corev1.SecretKeySelector `json:"APIKeySecretRef"`
 }
 
 // Name is used as the name for this DNS solver when referencing it on the ACME
@@ -126,19 +138,9 @@ func loadConfig(cfgJSON *extapi.JSON) (anxDNSProviderConfig, error) {
 	return cfg, nil
 }
 
-// AddQueryParams adds the query params to base URL
-func addQueryParams(baseURL string, queryParams map[string]string) string {
-	baseURL += "?"
-	params := url.Values{}
-	for key, value := range queryParams {
-		params.Add(key, value)
-	}
-	return baseURL + params.Encode()
-}
-
 // getSecretValue returns the kubernetes secrets
 func (c *anxDNSProviderSolver) getSecretValue(selector corev1.SecretKeySelector, ns string) ([]byte, error) {
-	secret, err := c.client.CoreV1().Secrets(ns).Get(selector.Name, metaV1.GetOptions{})
+	secret, err := c.client.CoreV1().Secrets(ns).Get(context.Background(), selector.Name, metaV1.GetOptions{})
 	if err != nil {
 		return nil, err
 	}
@@ -149,17 +151,16 @@ func (c *anxDNSProviderSolver) getSecretValue(selector corev1.SecretKeySelector,
 	return nil, err
 }
 
-
 // getSubDomain returns the subdomain part of a fqdn
 func getSubDomain(domain, fqdn string) string {
-	if idx := strings.Index(fqdn, "." + domain); idx != -1 {
+	if idx := strings.Index(fqdn, "."+domain); idx != -1 {
 		return fqdn[:idx]
 	}
 	return util.UnFqdn(fqdn)
 }
 
 // requestSend does the API request
-func (c *anxDNSProviderSolver) sendRequest(ch *v1alpha1.ChallengeRequest, value string) error {
+func (c *anxDNSProviderSolver) sendRequest(ch *acme.ChallengeRequest, value string) error {
 	cfg, err := loadConfig(ch.Config)
 	if err != nil {
 		return err
@@ -173,22 +174,33 @@ func (c *anxDNSProviderSolver) sendRequest(ch *v1alpha1.ChallengeRequest, value 
 	domain := util.UnFqdn(ch.ResolvedZone)
 	label := getSubDomain(domain, ch.ResolvedFQDN)
 
-	var jsonData = []byte(`{
-		"domain": domain,
-		"type": "TXT",
-		"name": label,
-		"ttl": 3600,
-		"txtdata": value,
-		"address": "",
-	}`)
+	// var jsonData = []byte(`{
+	// 	"domain": domain,
+	// 	"type": "TXT",
+	// 	"name": label,
+	// 	"ttl": 3600,
+	// 	"txtdata": value,
+	// 	"address": "",
+	// }`)
 
-	request, error := http.NewRequest("POST", cfg.baseURL, bytes.NewBuffer(jsonData))
+	data := map[string]interface{}{
+		"domain":  domain,
+		"type":    "TXT",
+		"name":    label,
+		"ttl":     3600,
+		"txtdata": label,
+		"address": "",
+	}
+
+	jsonData, _ := json.Marshal(data)
+
+	request, error := http.NewRequest("POST", cfg.BaseURL, bytes.NewBuffer(jsonData))
 	if error != nil {
 		return err
 	}
 
 	request.Header.Add("Content-Type", "application/json")
-	request.Header.Add("apikey", apiKey)
+	request.Header.Add("apikey", string(apiKey))
 
 	response, error := client.Do(request)
 	if error != nil {
@@ -196,17 +208,17 @@ func (c *anxDNSProviderSolver) sendRequest(ch *v1alpha1.ChallengeRequest, value 
 	}
 
 	defer func() {
-		err := resp.Body.Close()
+		err := response.Body.Close()
 		if err != nil {
 			klog.Fatal(err)
 		}
 	}()
 
 	// Read response body
-	respBody, _ := ioutil.ReadAll(resp.Body)
+	respBody, _ := ioutil.ReadAll(response.Body)
 
 	// Display results
-	fmt.Println("response Status : ", resp.Status)
+	fmt.Println("response Status : ", response.Status)
 	fmt.Println("response Body : ", string(respBody))
 	return nil
 }
