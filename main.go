@@ -91,7 +91,7 @@ func (c *anxDNSProviderSolver) Name() string {
 // cert-manager itself will later perform a self check to ensure that the
 // solver has correctly configured the DNS provider.
 func (c *anxDNSProviderSolver) Present(ch *v1alpha1.ChallengeRequest) error {
-	return c.sendRequest(ch, ch.Key)
+	return c.addRecord(ch, ch.Key)
 }
 
 // CleanUp should delete the relevant TXT record from the DNS provider console.
@@ -101,7 +101,7 @@ func (c *anxDNSProviderSolver) Present(ch *v1alpha1.ChallengeRequest) error {
 // This is in order to facilitate multiple DNS validations for the same domain
 // concurrently.
 func (c *anxDNSProviderSolver) CleanUp(ch *v1alpha1.ChallengeRequest) error {
-	return c.sendRequest(ch, "")
+	return c.deleteRecord(ch)
 }
 
 // Initialize will be called when the webhook first starts.
@@ -160,7 +160,7 @@ func getSubDomain(domain, fqdn string) string {
 }
 
 // requestSend does the API request
-func (c *anxDNSProviderSolver) sendRequest(ch *acme.ChallengeRequest, value string) error {
+func (c *anxDNSProviderSolver) addRecord(ch *acme.ChallengeRequest, value string) error {
 	cfg, err := loadConfig(ch.Config)
 	if err != nil {
 		return err
@@ -174,21 +174,12 @@ func (c *anxDNSProviderSolver) sendRequest(ch *acme.ChallengeRequest, value stri
 	domain := util.UnFqdn(ch.ResolvedZone)
 	label := getSubDomain(domain, ch.ResolvedFQDN)
 
-	// var jsonData = []byte(`{
-	// 	"domain": domain,
-	// 	"type": "TXT",
-	// 	"name": label,
-	// 	"ttl": 3600,
-	// 	"txtdata": value,
-	// 	"address": "",
-	// }`)
-
 	data := map[string]interface{}{
 		"domain":  domain,
 		"type":    "TXT",
 		"name":    label,
 		"ttl":     3600,
-		"txtdata": label,
+		"txtdata": value,
 		"address": "",
 	}
 
@@ -204,13 +195,13 @@ func (c *anxDNSProviderSolver) sendRequest(ch *acme.ChallengeRequest, value stri
 
 	response, error := client.Do(request)
 	if error != nil {
-		fmt.Println(err)
+		fmt.Println(error)
 	}
 
 	defer func() {
-		err := response.Body.Close()
-		if err != nil {
-			klog.Fatal(err)
+		error := response.Body.Close()
+		if error != nil {
+			klog.Fatal(error)
 		}
 	}()
 
@@ -221,4 +212,57 @@ func (c *anxDNSProviderSolver) sendRequest(ch *acme.ChallengeRequest, value stri
 	fmt.Println("response Status : ", response.Status)
 	fmt.Println("response Body : ", string(respBody))
 	return nil
+}
+
+func (c *anxDNSProviderSolver) deleteRecord(ch *acme.ChallengeRequest) error {
+	return nil
+	// cfg, err := loadConfig(ch.Config)
+	// if err != nil {
+	// 	return err
+	// }
+
+	// // Get Kubernetes secrets
+	// apiKey, err := c.getSecretValue(cfg.APIKeySecretRef, ch.ResourceNamespace)
+
+	// // Create client
+	// client := &http.Client{}
+	// domain := util.UnFqdn(ch.ResolvedZone)
+	// label := getSubDomain(domain, ch.ResolvedFQDN)
+
+	// data := map[string]interface{}{
+	// 	"domain":  domain,
+	// 	"type":    "TXT",
+	// 	"txtdata": label,
+	// 	"address": "",
+	// }
+
+	// jsonData, _ := json.Marshal(data)
+
+	// request, error := http.NewRequest("DELETE", cfg.BaseURL, bytes.NewBuffer(jsonData))
+	// if error != nil {
+	// 	return err
+	// }
+
+	// request.Header.Add("Content-Type", "application/json")
+	// request.Header.Add("apikey", string(apiKey))
+
+	// response, error := client.Do(request)
+	// if error != nil {
+	// 	fmt.Println(err)
+	// }
+
+	// defer func() {
+	// 	err := response.Body.Close()
+	// 	if err != nil {
+	// 		klog.Fatal(err)
+	// 	}
+	// }()
+
+	// // Read response body
+	// respBody, _ := ioutil.ReadAll(response.Body)
+
+	// // Display results
+	// fmt.Println("response Status : ", response.Status)
+	// fmt.Println("response Body : ", string(respBody))
+	// return nil
 }

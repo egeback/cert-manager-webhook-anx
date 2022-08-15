@@ -1,7 +1,7 @@
-{   
-    "apiUrlBase": "https://dyn.anx.se/api/dns/",
-    "apiKeySecretRef": {
-      "name": "anxdns-apikey",
-      "key": "apiKey"
-    }
-  }
+{
+	"apiUrlBase": "https://dyn.anx.se/api/dns/",
+	"apiKeySecretRef": {
+		"name": "anxdns-secret",
+		"key": "api-key"
+	}
+}
