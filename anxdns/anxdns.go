@@ -9,21 +9,19 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
-
-	"k8s.io/klog/v2"
 )
 
 const (
 	defaultTTL int = 3600
 )
 
-type AnxDnsClient struct {
-	BaseURL string `https://dyn.anx.se/api/dns/`
+type Client struct {
+	BaseUrl string `default:"https://dyn.anx.se/api/dns/"`
 	Domain  string
 	ApiKey  string
 }
 
-func _communicate(client AnxDnsClient, apiRequest Request) []byte {
+func (client Client) _communicate(apiRequest Request) []byte {
 	// Create client
 	httpClient := &http.Client{}
 
@@ -31,9 +29,9 @@ func _communicate(client AnxDnsClient, apiRequest Request) []byte {
 	var error error
 
 	if apiRequest.JsonData == nil {
-		request, error = http.NewRequest(apiRequest.Type, client.BaseURL+apiRequest.QueryParams, nil)
+		request, error = http.NewRequest(apiRequest.Type, client.BaseUrl+apiRequest.QueryParams, nil)
 	} else {
-		request, error = http.NewRequest(apiRequest.Type, client.BaseURL+apiRequest.QueryParams, bytes.NewBuffer(apiRequest.JsonData))
+		request, error = http.NewRequest(apiRequest.Type, client.BaseUrl+apiRequest.QueryParams, bytes.NewBuffer(apiRequest.JsonData))
 	}
 
 	if error != nil {
@@ -51,7 +49,7 @@ func _communicate(client AnxDnsClient, apiRequest Request) []byte {
 	defer func() {
 		err := response.Body.Close()
 		if err != nil {
-			klog.Fatal(err)
+			//klog.Fatal(err)
 		}
 	}()
 
@@ -65,7 +63,7 @@ func _communicate(client AnxDnsClient, apiRequest Request) []byte {
 	return respBody
 }
 
-func addTxtRecord(client AnxDnsClient, name string, txt string, ttl int) {
+func (client Client) addTxtRecord(name string, txt string, ttl int) {
 	record := Data{
 		Domain:  client.Domain,
 		Type:    "TXT",
@@ -81,10 +79,10 @@ func addTxtRecord(client AnxDnsClient, name string, txt string, ttl int) {
 		JsonData: jsonData,
 	}
 
-	_communicate(client, apiRequest)
+	client._communicate(apiRequest)
 }
 
-func addARecord(client AnxDnsClient, name string, address string, ttl int) {
+func (client Client) addARecord(name string, address string, ttl int) {
 	record := Data{
 		Domain:  client.Domain,
 		Type:    "A",
@@ -100,10 +98,10 @@ func addARecord(client AnxDnsClient, name string, address string, ttl int) {
 		JsonData: jsonData,
 	}
 
-	_communicate(client, apiRequest)
+	client._communicate(apiRequest)
 }
 
-func addCNameRecord(client AnxDnsClient, name string, address string, ttl int) {
+func (client Client) addCNameRecord(name string, address string, ttl int) {
 	record := Data{
 		Domain:  client.Domain,
 		Type:    "CNAME",
@@ -119,15 +117,15 @@ func addCNameRecord(client AnxDnsClient, name string, address string, ttl int) {
 		JsonData: jsonData,
 	}
 
-	_communicate(client, apiRequest)
+	client._communicate(apiRequest)
 }
 
-func verifyOrGetRecord(client AnxDnsClient, line int, name string, recordType string) Record {
+func (client Client) verifyOrGetRecord(line int, name string, recordType string) Record {
 	var record Record
 	if line > 0 {
-		record = getRecordsByLine(client, line)
+		record = client.getRecordsByLine(line)
 	} else if len(name) > 0 {
-		records := getRecordsByName(client, name)
+		records := client.getRecordsByName(name)
 		if len(records) == 0 {
 			panic(errors.New("0 records with that name"))
 		} else if len(records) > 1 {
@@ -146,15 +144,15 @@ func verifyOrGetRecord(client AnxDnsClient, line int, name string, recordType st
 
 }
 
-func deleteRecordsByTxt(client AnxDnsClient, name string) {
+func (client Client) deleteRecordsByTxt(name string) {
 
 }
 
-func getAllRecords(client AnxDnsClient) []Record {
+func (client Client) getAllRecords() []Record {
 	request := Request{
 		Type: GET,
 	}
-	respBody := _communicate(client, request)
+	respBody := client._communicate(request)
 	response := Response{}
 	if err := json.Unmarshal(respBody, &response); err != nil {
 		panic(err)
@@ -162,24 +160,24 @@ func getAllRecords(client AnxDnsClient) []Record {
 	return response.DnsRecords
 }
 
-func getRecordsByName(client AnxDnsClient, name string) []Record {
-	all_records := getAllRecords(client)
+func (client Client) getRecordsByName(name string) []Record {
+	all_records := client.getAllRecords()
 
 	return parseRecordsByName(all_records, name)
 }
 
-func getRecordsByLine(client AnxDnsClient, line int) Record {
-	all_records := getAllRecords(client)
+func (client Client) getRecordsByLine(line int) Record {
+	all_records := client.getAllRecords()
 
 	return parseRecordsByLine(all_records, line)
 }
 
-func getRecordsByTxt(client AnxDnsClient, txt string, name string) []Record {
+func (client Client) getRecordsByTxt(txt string, name string) []Record {
 	var records []Record
 	if name != "" {
-		records = getRecordsByName(client, name)
+		records = client.getRecordsByName(name)
 	} else {
-		records = getAllRecords(client)
+		records = client.getAllRecords()
 	}
 
 	return parseRecordsByTxt(records, txt)
