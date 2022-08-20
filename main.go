@@ -1,22 +1,19 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
-	"net/http"
 	"os"
 	"strings"
 
+	"github.com/egeback/anxdns-go/anxdns"
 	"github.com/jetstack/cert-manager/pkg/acme/webhook/apis/acme/v1alpha1"
 	acme "github.com/jetstack/cert-manager/pkg/acme/webhook/apis/acme/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
 	extapi "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	metaV1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	"k8s.io/klog/v2"
 	//"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
@@ -101,7 +98,7 @@ func (c *anxDNSProviderSolver) Present(ch *v1alpha1.ChallengeRequest) error {
 // This is in order to facilitate multiple DNS validations for the same domain
 // concurrently.
 func (c *anxDNSProviderSolver) CleanUp(ch *v1alpha1.ChallengeRequest) error {
-	return c.deleteRecord(ch)
+	return c.deleteRecord(ch, ch.Key)
 }
 
 // Initialize will be called when the webhook first starts.
@@ -170,99 +167,32 @@ func (c *anxDNSProviderSolver) addRecord(ch *acme.ChallengeRequest, value string
 	apiKey, err := c.getSecretValue(cfg.APIKeySecretRef, ch.ResourceNamespace)
 
 	// Create client
-	client := &http.Client{}
 	domain := util.UnFqdn(ch.ResolvedZone)
 	label := getSubDomain(domain, ch.ResolvedFQDN)
+	client := anxdns.NewClient(domain, string(apiKey))
 
-	data := map[string]interface{}{
-		"domain":  domain,
-		"type":    "TXT",
-		"name":    label,
-		"ttl":     3600,
-		"txtdata": value,
-		"address": "",
-	}
+	//klog.Fatal(error)
 
-	jsonData, _ := json.Marshal(data)
-
-	request, error := http.NewRequest("POST", cfg.BaseURL, bytes.NewBuffer(jsonData))
-	if error != nil {
-		return err
-	}
-
-	request.Header.Add("Content-Type", "application/json")
-	request.Header.Add("apikey", string(apiKey))
-
-	response, error := client.Do(request)
-	if error != nil {
-		fmt.Println(error)
-	}
-
-	defer func() {
-		error := response.Body.Close()
-		if error != nil {
-			klog.Fatal(error)
-		}
-	}()
-
-	// Read response body
-	respBody, _ := ioutil.ReadAll(response.Body)
-
-	// Display results
-	fmt.Println("response Status : ", response.Status)
-	fmt.Println("response Body : ", string(respBody))
+	client.AddTxtRecord(label, value, anxdns.DefaultTTL)
 	return nil
 }
 
-func (c *anxDNSProviderSolver) deleteRecord(ch *acme.ChallengeRequest) error {
+func (c *anxDNSProviderSolver) deleteRecord(ch *acme.ChallengeRequest, value string) error {
+	cfg, err := loadConfig(ch.Config)
+	if err != nil {
+		return err
+	}
+
+	// Get Kubernetes secrets
+	apiKey, err := c.getSecretValue(cfg.APIKeySecretRef, ch.ResourceNamespace)
+
+	// Create client
+	domain := util.UnFqdn(ch.ResolvedZone)
+	label := getSubDomain(domain, ch.ResolvedFQDN)
+	client := anxdns.NewClient(domain, string(apiKey))
+
+	//klog.Fatal(error)
+
+	client.DeleteRecordsByTxt(label, value)
 	return nil
-	// cfg, err := loadConfig(ch.Config)
-	// if err != nil {
-	// 	return err
-	// }
-
-	// // Get Kubernetes secrets
-	// apiKey, err := c.getSecretValue(cfg.APIKeySecretRef, ch.ResourceNamespace)
-
-	// // Create client
-	// client := &http.Client{}
-	// domain := util.UnFqdn(ch.ResolvedZone)
-	// label := getSubDomain(domain, ch.ResolvedFQDN)
-
-	// data := map[string]interface{}{
-	// 	"domain":  domain,
-	// 	"type":    "TXT",
-	// 	"txtdata": label,
-	// 	"address": "",
-	// }
-
-	// jsonData, _ := json.Marshal(data)
-
-	// request, error := http.NewRequest("DELETE", cfg.BaseURL, bytes.NewBuffer(jsonData))
-	// if error != nil {
-	// 	return err
-	// }
-
-	// request.Header.Add("Content-Type", "application/json")
-	// request.Header.Add("apikey", string(apiKey))
-
-	// response, error := client.Do(request)
-	// if error != nil {
-	// 	fmt.Println(err)
-	// }
-
-	// defer func() {
-	// 	err := response.Body.Close()
-	// 	if err != nil {
-	// 		klog.Fatal(err)
-	// 	}
-	// }()
-
-	// // Read response body
-	// respBody, _ := ioutil.ReadAll(response.Body)
-
-	// // Display results
-	// fmt.Println("response Status : ", response.Status)
-	// fmt.Println("response Body : ", string(respBody))
-	// return nil
 }

@@ -8,6 +8,7 @@ require (
 	github.com/stretchr/testify v1.7.0
 	k8s.io/apiextensions-apiserver v0.23.1
 	k8s.io/client-go v0.23.1
+    github.com/egeback/anxdns-go v1.0.0
 )
 
 require (
@@ -101,3 +102,4 @@ require (
 	sigs.k8s.io/structured-merge-diff/v4 v4.2.0 // indirect
 	sigs.k8s.io/yaml v1.3.0 // indirect
 )
+
