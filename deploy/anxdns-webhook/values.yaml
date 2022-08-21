@@ -9,12 +9,12 @@
 groupName: acme.anx.se
 
 certManager:
-  namespace: cert-manager
+  namespace: kube-system
   serviceAccountName: cert-manager
 
 image:
-  repository: egeback/anxdns-webhook
-  tag: v1.0.0
+  repository: egeback/cert-manager-webhook-anx
+  tag: v0.0.1
   pullPolicy: IfNotPresent
 
 nameOverride: ""
