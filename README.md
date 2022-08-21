@@ -22,51 +22,20 @@ data:
   apiKey: <api_key>
 EOF
 ```
- 
- 2. Grant permission to get the secret to `cert-manager-webhook-anxdns` service account:
 
- ```yaml
-cat <<EOF | kubectl apply -f -
-apiVersion: rbac.authorization.k8s.io/v1
-kind: Role
-metadata:
-  name: cert-manager-webhook-anxdns:secret-reader
-  namespace: <namespace where cert-manager provider resides>
-rules:
-- apiGroups: [""]
-  resources: ["secrets"]
-  resourceNames: ["anxdns-secret"]
-  verbs: ["get", "watch"]
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: RoleBinding
-metadata:
-  name: cert-manager-webhook-anxdns:secret-reader
-  namespace: <namespace where cert-manager provider resides>
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: Role
-  name: cert-manager-webhook-anxdns:secret-reader
-subjects:
-- apiGroup: ""
-  kind: ServiceAccount
-  name: cert-manager-webhook-anxdns
-EOF
-```
-
-3. Clone the github repository:
+ 2. Clone the github repository:
  
 ```console
 git clone https://github.com/egeback/cert-manager-webhook-anx.git
 ```
 
- 4. Install the Helm chart with:
+ 3. Install the Helm chart with:
 
 ```console
 helm upgrade --install cert-manager-webhook-anxdns --namespace cert-manager deploy/anxdns-webhook
 ```
 
- 5. Create a certificate issuer with the letsencrypt staging ca for testing purposes (you must insert your e-mail address):
+ 4. Create a certificate issuer with the letsencrypt staging ca for testing purposes (you must insert your e-mail address):
 
 ```yaml
 cat <<EOF | kubectl apply -f -
@@ -94,7 +63,7 @@ spec:
 EOF
 ```
 
- 6. Issue a test certificate (replace the test urls in here):
+ 5. Issue a test certificate (replace the test urls in here):
 
 ```yaml
 cat <<EOF | kubectl apply -f -
