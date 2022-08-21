@@ -3,7 +3,7 @@ module github.com/egeback/cert-manager-webhook-anx
 go 1.17
 
 require (
-	github.com/egeback/anxdns-go v1.0.1
+	github.com/egeback/anxdns-go v1.0.2
 	github.com/jetstack/cert-manager v1.7.0
 	k8s.io/apiextensions-apiserver v0.23.1
 	k8s.io/client-go v0.23.1
