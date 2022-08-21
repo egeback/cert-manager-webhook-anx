@@ -68,8 +68,6 @@ type anxDNSProviderSolver struct {
 // resource and fetch these credentials using a Kubernetes clientset.
 type anxDNSProviderConfig struct {
 	BaseURL         string                   `json:"baseURL"`
-	Label           string                   `json:"label"`
-	DNSType         string                   `json:"dnsType"`
 	APIKeySecretRef corev1.SecretKeySelector `json:"apiKeySecretRef"`
 }
 
@@ -109,6 +107,9 @@ func (c *anxDNSProviderSolver) Present(ch *v1alpha1.ChallengeRequest) error {
 	// fmt.Println("Label: " + ch.Key)
 	// fmt.Println("FQDN:" + ch.ResolvedFQDN)
 	client := anxdns.NewClient(domain, string(apiKey))
+	if len(cfg.BaseURL) > 0 {
+		client.BaseUrl = cfg.BaseURL
+	}
 
 	// fmt.Println("Start add")
 	error := client.AddTxtRecord(ch.ResolvedFQDN, ch.Key, 120)
