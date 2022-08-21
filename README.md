@@ -89,8 +89,8 @@ spec:
           config:
             baseURL: https://dyn.anx.se/api/dns/
             apiKeySecretRef:
-		name: anxdns-secret
-		key: apiKey
+              name: anxdns-secret
+              key: apiKey
 EOF
 ```
 
