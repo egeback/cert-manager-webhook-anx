@@ -7,17 +7,16 @@ import (
 	"os"
 	"strings"
 
-	"github.com/egeback/anxdns-go/anxdns"
-	"github.com/jetstack/cert-manager/pkg/acme/webhook/apis/acme/v1alpha1"
-	acme "github.com/jetstack/cert-manager/pkg/acme/webhook/apis/acme/v1alpha1"
-	corev1 "k8s.io/api/core/v1"
-	extapi "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
-	metaV1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-
-	//"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
+	"k8s.io/klog"
 
+	corev1 "k8s.io/api/core/v1"
+	extapi "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1beta1"
+	metaV1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
+	"github.com/egeback/anxdns-go/anxdns"
+	"github.com/jetstack/cert-manager/pkg/acme/webhook/apis/acme/v1alpha1"
 	"github.com/jetstack/cert-manager/pkg/acme/webhook/cmd"
 	"github.com/jetstack/cert-manager/pkg/issuer/acme/dns/util"
 )
@@ -69,7 +68,9 @@ type anxDNSProviderSolver struct {
 // resource and fetch these credentials using a Kubernetes clientset.
 type anxDNSProviderConfig struct {
 	BaseURL         string                   `json:"baseURL"`
-	APIKeySecretRef corev1.SecretKeySelector `json:"APIKeySecretRef"`
+	Label           string                   `json:"label"`
+	DNSType         string                   `json:"dnsType"`
+	APIKeySecretRef corev1.SecretKeySelector `json:"apiKeySecretRef"`
 }
 
 // Name is used as the name for this DNS solver when referencing it on the ACME
@@ -79,7 +80,7 @@ type anxDNSProviderConfig struct {
 // within a single webhook deployment**.
 // For example, `cloudflare` may be used as the name of a solver.
 func (c *anxDNSProviderSolver) Name() string {
-	return "anxdns-solver"
+	return "anxdns"
 }
 
 // Present is responsible for actually presenting the DNS record with the
@@ -88,7 +89,36 @@ func (c *anxDNSProviderSolver) Name() string {
 // cert-manager itself will later perform a self check to ensure that the
 // solver has correctly configured the DNS provider.
 func (c *anxDNSProviderSolver) Present(ch *v1alpha1.ChallengeRequest) error {
-	return c.addRecord(ch, ch.Key)
+	cfg, err := loadConfig((*extapi.JSON)(ch.Config))
+
+	if err != nil {
+		return err
+	}
+
+	// Get Kubernetes secrets
+	apiKey, err := c.getSecretValue(cfg.APIKeySecretRef, ch.ResourceNamespace)
+	if err != nil {
+		return err
+	}
+
+	// Create client
+	domain := util.UnFqdn(ch.ResolvedZone)
+
+	// fmt.Println("Domain: " + domain)
+	// fmt.Println("ApiUrl: " + cfg.BaseURL)
+	// fmt.Println("Label: " + ch.Key)
+	// fmt.Println("FQDN:" + ch.ResolvedFQDN)
+	client := anxdns.NewClient(domain, string(apiKey))
+
+	// fmt.Println("Start add")
+	error := client.AddTxtRecord(ch.ResolvedFQDN, ch.Key, 120)
+	if error != nil {
+		fmt.Println(error)
+		klog.Fatal(error)
+	}
+	// fmt.Println("End add")
+
+	return error
 }
 
 // CleanUp should delete the relevant TXT record from the DNS provider console.
@@ -98,7 +128,39 @@ func (c *anxDNSProviderSolver) Present(ch *v1alpha1.ChallengeRequest) error {
 // This is in order to facilitate multiple DNS validations for the same domain
 // concurrently.
 func (c *anxDNSProviderSolver) CleanUp(ch *v1alpha1.ChallengeRequest) error {
-	return c.deleteRecord(ch, ch.Key)
+	// fmt.Println("Cleanup")
+	cfg, err := loadConfig((*extapi.JSON)(ch.Config))
+
+	if err != nil {
+		return err
+	}
+
+	// Get Kubernetes secrets
+	apiKey, err := c.getSecretValue(cfg.APIKeySecretRef, ch.ResourceNamespace)
+	if err != nil {
+		return err
+	}
+
+	// Create client
+	domain := util.UnFqdn(ch.ResolvedZone)
+	client := anxdns.NewClient(domain, string(apiKey))
+
+	//klog.Fatal(error)
+
+	// fmt.Println("Start delete")
+	error := client.DeleteRecordsByTxt(ch.ResolvedFQDN, ch.Key)
+
+	if error != nil {
+		if strings.Contains(fmt.Sprint(error), "0 records") {
+			error = nil
+		} else {
+			fmt.Println(error)
+			klog.Fatal(error)
+		}
+	}
+	// fmt.Println("Stop delete")
+
+	return error
 }
 
 // Initialize will be called when the webhook first starts.
@@ -131,7 +193,6 @@ func loadConfig(cfgJSON *extapi.JSON) (anxDNSProviderConfig, error) {
 	if err := json.Unmarshal(cfgJSON.Raw, &cfg); err != nil {
 		return cfg, fmt.Errorf("error decoding solver config: %v", err)
 	}
-
 	return cfg, nil
 }
 
@@ -148,51 +209,66 @@ func (c *anxDNSProviderSolver) getSecretValue(selector corev1.SecretKeySelector,
 	return nil, err
 }
 
-// getSubDomain returns the subdomain part of a fqdn
-func getSubDomain(domain, fqdn string) string {
-	if idx := strings.Index(fqdn, "."+domain); idx != -1 {
-		return fqdn[:idx]
-	}
-	return util.UnFqdn(fqdn)
-}
+// // getSubDomain returns the subdomain part of a fqdn
+// func getSubDomain(domain, fqdn string) string {
+// 	if idx := strings.Index(fqdn, "."+domain); idx != -1 {
+// 		return fqdn[:idx]
+// 	}
+// 	return util.UnFqdn(fqdn)
+// }
 
 // requestSend does the API request
-func (c *anxDNSProviderSolver) addRecord(ch *acme.ChallengeRequest, value string) error {
-	cfg, err := loadConfig(ch.Config)
-	if err != nil {
-		return err
-	}
+// func (c *anxDNSProviderSolver) addRecord(ch *acme.ChallengeRequest, value string) error {
+// 	fmt.Println("addRecord")
+// 	cfg, err := loadConfig(ch.Config)
+// 	fmt.Println(cfg)
+// 	if err != nil {
+// 		return err
+// 	}
 
-	// Get Kubernetes secrets
-	apiKey, err := c.getSecretValue(cfg.APIKeySecretRef, ch.ResourceNamespace)
+// 	// Get Kubernetes secrets
+// 	// apiKey, err := c.getSecretValue(cfg.APIKeySecretRef, ch.ResourceNamespace)
+// 	// if err != nil {
+// 	// 	return err
+// 	// }
 
-	// Create client
-	domain := util.UnFqdn(ch.ResolvedZone)
-	label := getSubDomain(domain, ch.ResolvedFQDN)
-	client := anxdns.NewClient(domain, string(apiKey))
+// 	// Create client
+// 	domain := util.UnFqdn(ch.ResolvedZone)
+// 	//label := getSubDomain(domain, ch.ResolvedFQDN)
 
-	//klog.Fatal(error)
+// 	fmt.Println("Domain: " + domain)
+// 	//fmt.Println("Apikey: " + string(apiKey))
+// 	//fmt.Println("ApiUrl: " + cfg.BaseURL)
+// 	//fmt.Println("Label: " + label)
+// 	fmt.Println("FQDN:" + ch.ResolvedFQDN)
+// 	client := anxdns.NewClient(domain, string(""))
 
-	client.AddTxtRecord(label, value, anxdns.DefaultTTL)
-	return nil
-}
+// 	//klog.Fatal(error)
 
-func (c *anxDNSProviderSolver) deleteRecord(ch *acme.ChallengeRequest, value string) error {
-	cfg, err := loadConfig(ch.Config)
-	if err != nil {
-		return err
-	}
+// 	client.AddTxtRecord(ch.ResolvedFQDN, value, anxdns.DefaultTTL)
+// 	return nil
+// }
 
-	// Get Kubernetes secrets
-	apiKey, err := c.getSecretValue(cfg.APIKeySecretRef, ch.ResourceNamespace)
+// func (c *anxDNSProviderSolver) deleteRecord(ch *acme.ChallengeRequest, value string) error {
+// 	cfg, err := loadConfig(ch.Config)
+// 	fmt.Println(cfg)
+// 	if err != nil {
+// 		return err
+// 	}
 
-	// Create client
-	domain := util.UnFqdn(ch.ResolvedZone)
-	label := getSubDomain(domain, ch.ResolvedFQDN)
-	client := anxdns.NewClient(domain, string(apiKey))
+// 	// Get Kubernetes secrets
+// 	// apiKey, err := c.getSecretValue(cfg.APIKeySecretRef, ch.ResourceNamespace)
+// 	// if err != nil {
+// 	// 	return err
+// 	// }
 
-	//klog.Fatal(error)
+// 	// Create client
+// 	domain := util.UnFqdn(ch.ResolvedZone)
+// 	//label := getSubDomain(domain, ch.ResolvedFQDN)
+// 	client := anxdns.NewClient(domain, string("apiKey"))
 
-	client.DeleteRecordsByTxt(label, value)
-	return nil
-}
+// 	//klog.Fatal(error)
+
+// 	client.DeleteRecordsByTxt(ch.ResolvedFQDN, value)
+// 	return nil
+// }
