@@ -1,8 +1,8 @@
 OS ?= $(shell go env GOOS)
 ARCH ?= $(shell go env GOARCH)
 
-IMAGE_NAME := "webhook"
-IMAGE_TAG := "latest"
+IMAGE_NAME := "egeback/cert-manager-webhook-anx"
+IMAGE_TAG := "v0.0.1"
 
 OUT := $(shell pwd)/_out
 
@@ -31,6 +31,7 @@ clean-kubebuilder:
 
 build:
 	docker build -t "$(IMAGE_NAME):$(IMAGE_TAG)" .
+	docker build -t "$(IMAGE_NAME):latest" .
 
 .PHONY: rendered-manifest.yaml
 rendered-manifest.yaml:
