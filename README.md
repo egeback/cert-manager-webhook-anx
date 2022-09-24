@@ -67,7 +67,7 @@ EOF
 
 ```yaml
 cat <<EOF | kubectl apply -f -
-apiVersion: cert-manager.io/v1alpha2
+apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
   name: example-tls
