@@ -1,3 +1,5 @@
+# Deprecated
+This code is deprecated and repo archived due to closure of ANX services.
 # cert-manager webhook for anx.se
 cert-manager ACME DNS01 webhook provider for anx.se
 ## Prequesites
